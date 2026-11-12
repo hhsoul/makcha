@@ -1,0 +1,14 @@
+{
+  "name": "막차알림",
+  "short_name": "막차알림",
+  "description": "현재 위치에서 집까지 막차 시간 계산과 출발 알림",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#14161f",
+  "theme_color": "#14161f",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

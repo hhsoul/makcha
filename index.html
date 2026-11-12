@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14161f">
+  <title>막차알림</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>막차알림</h1>
+      <p class="sub" id="clock">--:--</p>
+    </div>
+    <button class="icon-btn" id="openSettings" aria-label="설정">⚙️</button>
+  </header>
+
+  <main>
+    <!-- 설정 안내 -->
+    <section class="card warn" id="setupHint" hidden>
+      <strong>먼저 집 위치를 설정해 주세요.</strong>
+      <p>오른쪽 위 ⚙️ 버튼에서 주소를 검색하거나 지도를 눌러 집을 지정할 수 있어요.</p>
+      <button class="btn primary" id="setupBtn">집 위치 설정하기</button>
+    </section>
+
+    <!-- 막차 카운트다운 -->
+    <section class="card hero" id="heroCard">
+      <p class="label">막차 타려면 출발까지</p>
+      <p class="countdown" id="countdown">--</p>
+      <p class="detail" id="leaveBy">현재 위치를 확인하는 중…</p>
+      <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+      <p class="meta" id="routeMeta"></p>
+      <div class="row">
+        <button class="btn" id="refreshLoc">📍 위치 새로고침</button>
+        <a class="btn" id="kakaoRoute" target="_blank" rel="noopener">🗺️ 카카오맵 실제 경로</a>
+      </div>
+    </section>
+
+    <!-- 술자리 모드 -->
+    <section class="card" id="partyCard">
+      <div class="between">
+        <div>
+          <h2>🍻 술자리 모드</h2>
+          <p class="muted" id="partyDesc">켜두면 출발 30분 전에 알려드려요.</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="partyToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <p class="note" id="partyNote" hidden>⚠️ 알림을 받으려면 이 화면을 닫지 말고 켜두세요. (화면 꺼짐 방지가 자동으로 켜져요)</p>
+      <button class="btn small" id="testAlert">알림 테스트</button>
+    </section>
+
+    <!-- 택시비 -->
+    <section class="card">
+      <h2>🚕 놓치면 택시비</h2>
+      <p class="taxi" id="taxiFare">-</p>
+      <p class="muted" id="taxiDetail"></p>
+    </section>
+
+    <!-- 대체 경로 -->
+    <section class="card">
+      <h2>🔀 대체 경로</h2>
+      <ul class="routes" id="altRoutes"></ul>
+      <p class="muted small-text">모든 시간·요금은 거리 기반 추정치예요. 정확한 시간표는 카카오맵 버튼으로 확인하세요.</p>
+    </section>
+
+    <!-- 위치 공유 -->
+    <section class="card">
+      <h2>📤 친구에게 위치 공유</h2>
+      <p class="muted">현재 위치와 예상 귀가 계획을 메시지로 보내요.</p>
+      <div class="row">
+        <button class="btn primary" id="shareBtn">위치 공유하기</button>
+        <a class="btn" id="smsBtn">문자로 보내기</a>
+      </div>
+      <p class="muted small-text" id="shareStatus"></p>
+    </section>
+
+    <!-- 지도 -->
+    <section class="card">
+      <h2>🧭 지도</h2>
+      <div id="map" class="map"></div>
+    </section>
+  </main>
+
+  <!-- 설정 -->
+  <dialog id="settings">
+    <form method="dialog" class="sheet">
+      <div class="between">
+        <h2>설정</h2>
+        <button class="icon-btn" value="close" aria-label="닫기">✕</button>
+      </div>
+
+      <fieldset>
+        <legend>🏠 집 위치</legend>
+        <p class="muted" id="homeLabel">설정 안 됨</p>
+        <div class="row">
+          <input type="search" id="addrInput" placeholder="주소 또는 장소 검색 (예: 망원동)">
+          <button type="button" class="btn" id="addrSearch">검색</button>
+        </div>
+        <ul class="results" id="addrResults"></ul>
+        <div class="row">
+          <button type="button" class="btn" id="homeHere">현재 위치를 집으로</button>
+        </div>
+        <p class="muted small-text">아래 지도를 눌러서 집 위치를 지정할 수도 있어요.</p>
+        <div id="pickMap" class="map small"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>🚇 막차 정보</legend>
+        <label>막차 시각 직접 입력 <span class="muted">(비우면 자동 추정)</span>
+          <input type="time" id="manualLast">
+        </label>
+        <p class="muted small-text">네이버·카카오맵에서 확인한 내 노선 막차 시각을 넣으면 가장 정확해요.</p>
+        <label>지금 있는 곳 → 역/정류장 도보 시간 (분)
+          <input type="number" id="walkMin" min="0" max="60" step="1">
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>🔔 알림</legend>
+        <label>출발 몇 분 전에 알릴까요?
+          <input type="number" id="leadMin" min="5" max="120" step="5">
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>👥 공유할 친구 번호 <span class="muted">(선택)</span></legend>
+        <input type="tel" id="friendPhone" placeholder="010-0000-0000">
+        <p class="muted small-text">입력하면 '문자로 보내기'에 이 번호가 미리 채워져요. 이 기기에만 저장돼요.</p>
+      </fieldset>
+
+      <button type="submit" class="btn primary wide" value="save" id="saveSettings">저장</button>
+    </form>
+  </dialog>
+
+  <!-- 알림 팝업 -->
+  <dialog id="alarm">
+    <div class="alarm-box">
+      <p class="alarm-emoji">🚨</p>
+      <h2 id="alarmTitle">출발할 시간이에요!</h2>
+      <p id="alarmBody"></p>
+      <button class="btn primary wide" id="alarmOk">확인</button>
+    </div>
+  </dialog>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
