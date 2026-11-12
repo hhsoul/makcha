@@ -1,5 +1,5 @@
 // 막차알림 서비스 워커: 오프라인 캐시 + 알림 클릭 처리
-const CACHE = 'makcha-v1';
+const CACHE = 'makcha-v2';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {

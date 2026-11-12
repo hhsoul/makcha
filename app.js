@@ -275,23 +275,40 @@ function setHere(lat, lng, manual = false) {
   render();
 }
 
-function locate() {
-  if (!('geolocation' in navigator)) {
-    locMsg = '이 브라우저는 위치 기능을 지원하지 않아요. 맨 아래 지도를 눌러 현재 위치를 지정하세요.';
-    render();
-    return;
+// 위치 가져오기: 정밀 위치(GPS) 먼저, 실패하면 대략적 위치(와이파이·기지국)로 한 번 더 시도
+function getPosition() {
+  return new Promise((resolve, reject) => {
+    if (!('geolocation' in navigator)) {
+      reject({ code: 0 });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(resolve, (err) => {
+      if (err.code === 1) { reject(err); return; } // 권한 거부는 재시도해도 소용없음
+      navigator.geolocation.getCurrentPosition(resolve, reject,
+        { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 });
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  });
+}
+
+function locErrorText(err) {
+  switch (err && err.code) {
+    case 0: return '이 브라우저는 위치 기능을 지원하지 않아요.';
+    case 1: return '위치 권한이 막혀 있어요. 주소창 왼쪽 아이콘(🔒/ⓘ) → 권한 → 위치를 "허용"으로 바꾼 뒤 다시 시도하세요. 폰 설정에서 위치(GPS)가 켜져 있는지도 확인해 주세요.';
+    case 3: return '위치를 찾는 데 시간이 너무 걸렸어요. 잠시 후 다시 시도해 주세요.';
+    default: return '위치를 찾지 못했어요. 폰 설정에서 위치(GPS)가 켜져 있는지 확인해 주세요.';
   }
+}
+
+async function locate() {
   locMsg = '현재 위치를 확인하는 중…';
-  navigator.geolocation.getCurrentPosition(
-    (pos) => setHere(pos.coords.latitude, pos.coords.longitude),
-    (err) => {
-      locMsg = err.code === 1
-        ? '위치 권한이 꺼져 있어요. 브라우저에서 위치를 허용하거나, 맨 아래 지도를 눌러 현재 위치를 지정하세요.'
-        : '위치를 가져오지 못했어요. 맨 아래 지도를 눌러 현재 위치를 지정하세요.';
-      render();
-    },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-  );
+  render();
+  try {
+    const pos = await getPosition();
+    setHere(pos.coords.latitude, pos.coords.longitude);
+  } catch (err) {
+    locMsg = locErrorText(err) + ' (맨 아래 지도를 눌러 현재 위치를 직접 지정할 수도 있어요)';
+    render();
+  }
 }
 
 function startWatch() {
@@ -357,9 +374,19 @@ function initPickMap() {
 // ───────── 설정 화면 ─────────
 let draftHome = null;
 
-function setDraftHome(lat, lng, label) {
+// 집 위치를 고르면 '저장'을 누르지 않아도 바로 저장 (save=false는 설정창을 열 때 표시만 할 때)
+function setDraftHome(lat, lng, label, save = true) {
   draftHome = { lat, lng, label };
-  $('homeLabel').textContent = '🏠 ' + label;
+  if (save) {
+    settings.home = draftHome;
+    saveSettingsToStore();
+    firedAlerts.clear();
+    updateMainMap();
+    render();
+    $('homeLabel').textContent = '✅ 집으로 저장했어요: ' + label;
+  } else {
+    $('homeLabel').textContent = '🏠 ' + label;
+  }
   if (pickMap) {
     if (!pickMarker) pickMarker = L.marker([lat, lng]).addTo(pickMap);
     else pickMarker.setLatLng([lat, lng]);
@@ -379,7 +406,7 @@ function openSettings() {
   initPickMap();
   setTimeout(() => {
     pickMap && pickMap.invalidateSize();
-    if (draftHome) setDraftHome(draftHome.lat, draftHome.lng, draftHome.label);
+    if (draftHome) setDraftHome(draftHome.lat, draftHome.lng, draftHome.label, false);
   }, 50);
 }
 
@@ -560,9 +587,20 @@ function bind() {
   $('refreshLoc').onclick = () => { if (here) here.manual = false; locate(); };
   $('addrSearch').onclick = searchAddress;
   $('addrInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); searchAddress(); } });
-  $('homeHere').onclick = () => {
-    if (here) setDraftHome(here.lat, here.lng, '현재 위치');
-    else $('homeLabel').textContent = '현재 위치를 아직 못 가져왔어요';
+  $('homeHere').onclick = async () => {
+    const btn = $('homeHere');
+    btn.disabled = true;
+    btn.textContent = '📡 현재 위치 찾는 중…';
+    try {
+      const pos = await getPosition();
+      setHere(pos.coords.latitude, pos.coords.longitude);
+      setDraftHome(pos.coords.latitude, pos.coords.longitude, '현재 위치에서 지정한 집');
+    } catch (err) {
+      $('homeLabel').textContent = '⚠️ ' + locErrorText(err) + ' 주소 검색이나 지도 누르기로도 지정할 수 있어요.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '현재 위치를 집으로';
+    }
   };
   $('settings').addEventListener('close', () => {
     if ($('settings').returnValue === 'save') saveSettings();
