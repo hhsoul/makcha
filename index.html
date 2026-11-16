@@ -71,11 +71,26 @@
     </section>
 
     <!-- 위치 공유 -->
-    <section class="card">
+    <section class="card" id="shareCard">
       <h2>📤 친구에게 위치 공유</h2>
-      <p class="muted">현재 위치와 예상 귀가 계획을 메시지로 보내요.</p>
+
+      <div class="live-box" id="liveBox">
+        <div class="between">
+          <div>
+            <p class="live-title" id="liveTitle">🔴 실시간 위치 공유</p>
+            <p class="muted small-text" id="liveDesc">친구가 링크로 내 위치를 계속 볼 수 있어요. 집에 도착하면 자동으로 끝나요.</p>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="liveStart">실시간 공유 시작</button>
+          <button class="btn" id="liveStop" hidden>공유 끝내기</button>
+        </div>
+        <p class="note" id="liveNote" hidden>⚠️ 공유 중에는 이 화면을 켜두세요. 앱을 닫으면 위치 전송이 멈춰요.</p>
+      </div>
+
+      <p class="muted">지금 위치와 귀가 계획을 메시지로 보내요. 실시간 공유 중이면 실시간 링크가 함께 가요.</p>
       <div class="row">
-        <button class="btn primary" id="shareBtn">위치 공유하기</button>
+        <button class="btn" id="shareBtn">위치 공유하기</button>
         <a class="btn" id="smsBtn">문자로 보내기</a>
       </div>
       <p class="muted small-text" id="shareStatus"></p>
@@ -150,6 +165,7 @@
   </dialog>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

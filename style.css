@@ -156,3 +156,16 @@ input {
 .alarm-box p { color: var(--muted); }
 
 .leaflet-container { background: #222; }
+
+.live-box {
+  background: var(--card2); border-radius: 12px; padding: 12px; margin: 8px 0 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.live-title { margin: 0; font-weight: 700; }
+.live-box.on { outline: 2px solid var(--danger); }
+.live-box.on .live-title::after {
+  content: ""; display: inline-block; width: 8px; height: 8px; margin-left: 8px;
+  border-radius: 50%; background: var(--danger); vertical-align: middle;
+  animation: pulse 1.2s infinite;
+}
+@keyframes pulse { 50% { opacity: .2; } }

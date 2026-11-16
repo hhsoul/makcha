@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14161f">
+  <meta name="robots" content="noindex">
+  <title>친구 위치 보기 · 막차알림</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .status { font-size: 22px; font-weight: 800; margin: 4px 0; }
+    .status.live { color: var(--ok); }
+    .status.stale { color: var(--warn); }
+    .status.ended { color: var(--muted); }
+    .status.arrived { color: var(--ok); }
+    .map.big { height: 55vh; min-height: 280px; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>📍 친구 위치</h1>
+      <p class="sub">막차알림 실시간 위치 공유</p>
+    </div>
+  </header>
+  <main>
+    <section class="card">
+      <p class="status" id="status">불러오는 중…</p>
+      <p class="muted" id="updated"></p>
+      <p id="note"></p>
+      <div id="map" class="map big"></div>
+      <div class="row" style="margin-top:10px">
+        <a class="btn" id="kakao" target="_blank" rel="noopener" hidden>카카오맵에서 보기</a>
+        <button class="btn" id="reload">새로고침</button>
+      </div>
+      <p class="muted small-text">10초마다 자동으로 새로고침돼요. 공유한 사람이 앱을 닫으면 위치가 멈출 수 있어요.</p>
+    </section>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="config.js"></script>
+  <script src="share.js"></script>
+</body>
+</html>

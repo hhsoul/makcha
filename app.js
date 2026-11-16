@@ -468,7 +468,7 @@ async function setParty(on) {
     await requestWakeLock();
     startWatch();
   } else {
-    releaseWakeLock();
+    if (!live) releaseWakeLock(); // 실시간 공유 중이면 화면 켜짐 유지
     stopWatch();
   }
   render();
@@ -545,11 +545,193 @@ function releaseWakeLock() {
   wakeLock = null;
 }
 
+// ───────── 실시간 위치 공유 (Supabase) ─────────
+const LIVE_KEY = 'makcha.live.v1';
+const LIVE_SEND_EVERY_MS = 20000;   // 최소 전송 간격
+const LIVE_HEARTBEAT_MS = 60000;    // 움직이지 않아도 1분마다 전송 (친구 화면의 '마지막 업데이트' 갱신)
+const LIVE_MOVE_M = 50;             // 50m 이상 움직이면 바로 전송
+const ARRIVE_M = 150;               // 집 150m 안에 들어오면 도착으로 처리
+
+let live = loadLive();              // { id, token, expiresAt }
+let liveWatchId = null;
+let liveTimer = null;
+let liveLastSent = 0;
+let liveLastPos = null;
+let liveSending = false;
+
+function loadLive() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LIVE_KEY) || 'null');
+    return v && new Date(v.expiresAt) > new Date() ? v : null;
+  } catch { return null; }
+}
+function saveLive() {
+  try {
+    if (live) localStorage.setItem(LIVE_KEY, JSON.stringify(live));
+    else localStorage.removeItem(LIVE_KEY);
+  } catch { /* 저장 불가 환경 */ }
+}
+
+function supabaseReady() {
+  const c = window.MAKCHA_CONFIG || {};
+  return !!(c.supabaseUrl && c.supabaseKey);
+}
+
+async function rpc(fn, args) {
+  const c = window.MAKCHA_CONFIG;
+  const headers = { 'Content-Type': 'application/json', apikey: c.supabaseKey };
+  // 예전 방식 anon 키(JWT)는 Authorization 헤더도 필요, 새 publishable 키(sb_...)는 apikey만
+  if (!c.supabaseKey.startsWith('sb_')) headers.Authorization = 'Bearer ' + c.supabaseKey;
+  const res = await fetch(c.supabaseUrl.replace(/\/+$/, '') + '/rest/v1/rpc/' + fn, {
+    method: 'POST', headers, body: JSON.stringify(args),
+  });
+  if (!res.ok) throw new Error(`${fn} 실패 (${res.status}): ${await res.text()}`);
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+function liveLink() {
+  if (!live) return null;
+  const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+  return base + 'share.html?id=' + live.id;
+}
+
+function liveNote() {
+  if (!plan) return null;
+  return plan.remaining > 0
+    ? `막차 타려고 ${hhmm(plan.leaveBy)}에 출발 예정 · 집 도착 약 ${hhmm(plan.arrive)}`
+    : `막차 놓쳐서 다른 방법으로 귀가 중 · 택시면 약 ${Math.round(plan.taxi.tripMin)}분`;
+}
+
+function renderLive(msg) {
+  const on = !!live;
+  $('liveBox').classList.toggle('on', on);
+  $('liveStart').hidden = on;
+  $('liveStop').hidden = !on;
+  $('liveNote').hidden = !on;
+  $('liveTitle').textContent = on ? '🔴 실시간 공유 중' : '🔴 실시간 위치 공유';
+  if (msg) $('liveDesc').textContent = msg;
+  else if (!supabaseReady()) $('liveDesc').textContent = '아직 서버(Supabase)가 연결되지 않아서 사용할 수 없어요.';
+  else if (on) {
+    const sent = liveLastSent ? new Date(liveLastSent).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-';
+    $('liveDesc').textContent = `마지막 전송 ${sent} · ${new Date(live.expiresAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}에 자동 종료`;
+  } else {
+    $('liveDesc').textContent = '친구가 링크로 내 위치를 계속 볼 수 있어요. 집에 도착하면 자동으로 끝나요.';
+  }
+  $('liveStart').disabled = !supabaseReady();
+}
+
+async function startLive() {
+  if (!supabaseReady()) { renderLive(); return; }
+  const btn = $('liveStart');
+  btn.disabled = true;
+  renderLive('📡 위치를 확인하고 공유를 만드는 중…');
+  try {
+    const pos = await getPosition();
+    setHere(pos.coords.latitude, pos.coords.longitude);
+    const rows = await rpc('create_share', { p_lat: here.lat, p_lng: here.lng, p_note: liveNote() });
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    live = { id: row.id, token: row.owner_token, expiresAt: row.expires_at };
+    liveLastSent = Date.now();
+    liveLastPos = { lat: here.lat, lng: here.lng };
+    saveLive();
+    beginLiveTracking();
+    renderLive();
+    updateSmsLink();
+    share(); // 바로 친구에게 보낼 수 있게 공유 창 열기
+  } catch (err) {
+    renderLive('⚠️ 공유를 시작하지 못했어요. ' + (err && err.code !== undefined ? locErrorText(err) : '인터넷 연결을 확인해 주세요.'));
+    console.error(err);
+  } finally {
+    btn.disabled = !supabaseReady();
+  }
+}
+
+function beginLiveTracking() {
+  requestWakeLock();
+  if (liveWatchId == null && 'geolocation' in navigator) {
+    liveWatchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        if (!here || !here.manual) setHere(pos.coords.latitude, pos.coords.longitude);
+        sendLive(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, false);
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 15000 }
+    );
+  }
+  clearInterval(liveTimer);
+  liveTimer = setInterval(() => {
+    if (here && !here.manual) sendLive(here.lat, here.lng, null, true);
+    else renderLive();
+  }, LIVE_HEARTBEAT_MS);
+}
+
+function endLiveTracking() {
+  if (liveWatchId != null) navigator.geolocation.clearWatch(liveWatchId);
+  liveWatchId = null;
+  clearInterval(liveTimer);
+  liveTimer = null;
+  if (!settings.party) releaseWakeLock();
+}
+
+async function sendLive(lat, lng, accuracy, heartbeat) {
+  if (!live || liveSending) return;
+  const now = Date.now();
+  const moved = liveLastPos ? haversineKm(liveLastPos, { lat, lng }) * 1000 : Infinity;
+  if (!heartbeat && now - liveLastSent < LIVE_SEND_EVERY_MS && moved < LIVE_MOVE_M) return;
+
+  // 집 도착 → 자동 종료
+  if (settings.home && haversineKm({ lat, lng }, settings.home) * 1000 < ARRIVE_M) {
+    await stopLive('arrived');
+    return;
+  }
+
+  liveSending = true;
+  try {
+    const ok = await rpc('update_share', {
+      p_id: live.id, p_token: live.token, p_lat: lat, p_lng: lng,
+      p_accuracy: accuracy == null ? null : Math.round(accuracy), p_note: liveNote(),
+    });
+    if (ok === false) { // 만료됐거나 이미 끝난 공유
+      live = null; saveLive(); endLiveTracking();
+      renderLive('공유 시간이 끝나서 자동으로 종료됐어요.');
+      return;
+    }
+    liveLastSent = now;
+    liveLastPos = { lat, lng };
+    renderLive();
+  } catch (err) {
+    renderLive('⚠️ 위치 전송 실패 — 인터넷 연결을 확인해 주세요. 연결되면 자동으로 다시 보내요.');
+    console.error(err);
+  } finally {
+    liveSending = false;
+  }
+}
+
+async function stopLive(status = 'stopped') {
+  if (!live) return;
+  const current = live;
+  live = null;
+  saveLive();
+  endLiveTracking();
+  try { await rpc('stop_share', { p_id: current.id, p_token: current.token, p_status: status }); }
+  catch (err) { console.error(err); }
+  if (status === 'arrived') {
+    renderLive('🏠 집에 도착해서 공유를 자동으로 끝냈어요.');
+    fireAlert('집 도착! 🏠', '실시간 위치 공유를 자동으로 끝냈어요. 친구 화면에도 "도착"으로 표시돼요.');
+  } else {
+    renderLive('공유를 끝냈어요. 친구 화면에는 "공유 종료"로 표시돼요.');
+  }
+  updateSmsLink();
+}
+
 // ───────── 위치 공유 ─────────
 function shareText() {
   if (!here) return null;
   const link = `https://map.kakao.com/link/map/${encodeURIComponent('내 위치')},${here.lat.toFixed(6)},${here.lng.toFixed(6)}`;
-  let msg = `[막차알림] 나 지금 여기 있어 📍\n${link}`;
+  let msg = live
+    ? `[막차알림] 실시간 내 위치 보기 📍\n${liveLink()}\n(집에 도착하면 자동으로 끝나요)`
+    : `[막차알림] 나 지금 여기 있어 📍\n${link}`;
   if (plan) {
     msg += plan.remaining > 0
       ? `\n막차 타려고 ${hhmm(plan.leaveBy)}에 출발할 예정, 집 도착 약 ${hhmm(plan.arrive)}`
@@ -615,9 +797,11 @@ function bind() {
   };
   $('alarmOk').onclick = () => $('alarm').close();
   $('shareBtn').onclick = share;
+  $('liveStart').onclick = startLive;
+  $('liveStop').onclick = () => stopLive('stopped');
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      if (settings.party) requestWakeLock();
+      if (settings.party || live) requestWakeLock();
       render();
     }
   });
@@ -633,6 +817,8 @@ function init() {
     startWatch();
     requestWakeLock();
   }
+  if (live) beginLiveTracking(); // 공유 중에 앱을 다시 열면 이어서 전송
+  renderLive();
   locate();
   render();
   setInterval(render, 1000);

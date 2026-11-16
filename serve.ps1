@@ -17,21 +17,27 @@ Write-Host "Makcha server running: http://localhost:$Port  (stop: Ctrl+C)"
 try {
   while ($listener.IsListening) {
     $ctx = $listener.GetContext()
-    $path = [Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath).TrimStart('/')
-    if ($path -eq '') { $path = 'index.html' }
-    $file = [IO.Path]::GetFullPath((Join-Path $root $path))
     $res = $ctx.Response
-    if ($file.StartsWith($root) -and (Test-Path $file -PathType Leaf)) {
-      $ext = [IO.Path]::GetExtension($file).ToLower()
-      $res.ContentType = if ($types.ContainsKey($ext)) { $types[$ext] } else { 'application/octet-stream' }
-      $res.Headers.Add('Cache-Control', 'no-cache')
-      $bytes = [IO.File]::ReadAllBytes($file)
-      $res.ContentLength64 = $bytes.Length
-      $res.OutputStream.Write($bytes, 0, $bytes.Length)
-    } else {
-      $res.StatusCode = 404
+    try {
+      $path = [Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath).TrimStart('/')
+      if ($path -eq '') { $path = 'index.html' }
+      $file = [IO.Path]::GetFullPath((Join-Path $root $path))
+      if ($file.StartsWith($root) -and (Test-Path $file -PathType Leaf)) {
+        $ext = [IO.Path]::GetExtension($file).ToLower()
+        $res.ContentType = if ($types.ContainsKey($ext)) { $types[$ext] } else { 'application/octet-stream' }
+        $res.Headers.Add('Cache-Control', 'no-cache')
+        $bytes = [IO.File]::ReadAllBytes($file)
+        $res.ContentLength64 = $bytes.Length
+        # HEAD requests must not carry a body
+        if ($ctx.Request.HttpMethod -ne 'HEAD') { $res.OutputStream.Write($bytes, 0, $bytes.Length) }
+      } else {
+        $res.StatusCode = 404
+      }
+    } catch {
+      Write-Host "request error: $($_.Exception.Message)"
+    } finally {
+      try { $res.OutputStream.Close() } catch {}
     }
-    $res.OutputStream.Close()
   }
 } finally {
   $listener.Stop()
