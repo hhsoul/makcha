@@ -629,7 +629,7 @@ async function startLive() {
   try {
     const pos = await getPosition();
     setHere(pos.coords.latitude, pos.coords.longitude);
-    const rows = await rpc('create_share', { p_lat: here.lat, p_lng: here.lng, p_note: liveNote() });
+    const rows = await rpc('makcha_create_share', { p_lat: here.lat, p_lng: here.lng, p_note: liveNote() });
     const row = Array.isArray(rows) ? rows[0] : rows;
     live = { id: row.id, token: row.owner_token, expiresAt: row.expires_at };
     liveLastSent = Date.now();
@@ -688,7 +688,7 @@ async function sendLive(lat, lng, accuracy, heartbeat) {
 
   liveSending = true;
   try {
-    const ok = await rpc('update_share', {
+    const ok = await rpc('makcha_update_share', {
       p_id: live.id, p_token: live.token, p_lat: lat, p_lng: lng,
       p_accuracy: accuracy == null ? null : Math.round(accuracy), p_note: liveNote(),
     });
@@ -714,7 +714,7 @@ async function stopLive(status = 'stopped') {
   live = null;
   saveLive();
   endLiveTracking();
-  try { await rpc('stop_share', { p_id: current.id, p_token: current.token, p_status: status }); }
+  try { await rpc('makcha_stop_share', { p_id: current.id, p_token: current.token, p_status: status }); }
   catch (err) { console.error(err); }
   if (status === 'arrived') {
     renderLive('🏠 집에 도착해서 공유를 자동으로 끝냈어요.');

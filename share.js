@@ -12,10 +12,10 @@ async function getShare() {
   const c = window.MAKCHA_CONFIG || {};
   const headers = { 'Content-Type': 'application/json', apikey: c.supabaseKey };
   if (!c.supabaseKey.startsWith('sb_')) headers.Authorization = 'Bearer ' + c.supabaseKey;
-  const res = await fetch(c.supabaseUrl.replace(/\/+$/, '') + '/rest/v1/rpc/get_share', {
+  const res = await fetch(c.supabaseUrl.replace(/\/+$/, '') + '/rest/v1/rpc/makcha_get_share', {
     method: 'POST', headers, body: JSON.stringify({ p_id: shareId }),
   });
-  if (!res.ok) throw new Error('get_share ' + res.status);
+  if (!res.ok) throw new Error('makcha_get_share ' + res.status);
   const rows = await res.json();
   return rows[0] || null;
 }
