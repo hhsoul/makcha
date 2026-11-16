@@ -4,6 +4,6 @@
 // 이 두 값은 원래 웹앱에 공개되는 값이라 GitHub에 올라가도 괜찮아요.
 // ⚠️ service_role / secret 키는 절대 여기에 넣지 마세요.
 window.MAKCHA_CONFIG = {
-  supabaseUrl: '',
-  supabaseKey: '',
+  supabaseUrl: 'https://akuodabqwawrftxycdsu.supabase.co',
+  supabaseKey: 'sb_publishable_Wp_j9PzUw8dufsObR0SI4A_q_5YTnfg',
 };
